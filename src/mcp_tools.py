@@ -5,7 +5,6 @@ These are thin wrappers around PolyStorage methods.
 All business logic lives in PolyStorage.
 """
 
-from contextlib import asynccontextmanager
 from typing import Optional
 from fastmcp import FastMCP
 
@@ -14,27 +13,7 @@ from src.poly_objects import PolyEvent
 from src.tools import calculate_compound_percentage
 
 
-@asynccontextmanager
-async def lifespan(app):
-    """
-    Lifespan context manager for FastMCP.
-
-    Handles async startup and shutdown of PolyStorage.
-    """
-    storage = PolyStorage.get_instance()
-
-    # Startup: load data and start daemon
-    await storage.start()
-
-    try:
-        yield
-    finally:
-        # Shutdown: stop daemon gracefully
-        await storage.stop()
-        print("Server stopped.")
-
-
-mcp = FastMCP("Polymarket MCP Server", lifespan=lifespan)
+mcp = FastMCP("Polymarket MCP Server")
 
 
 @mcp.tool()
@@ -129,8 +108,3 @@ def get_event(event_id: str) -> dict:
         Event as dict
     """
     return PolyStorage.get_instance().get_decorated_event(event_id)
-
-
-# @mcp.custom_route("/api/get_event", methods=["GET"])
-# async def get_event_api(request: Request) -> PlainTextResponse:
-#     return get_event(request.query_params.get("event_id"))
