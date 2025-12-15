@@ -5,15 +5,42 @@ These are thin wrappers around PolyStorage methods.
 All business logic lives in PolyStorage.
 """
 
+import os
 from typing import Optional
+
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
+from fastmcp.server.dependencies import get_http_headers
+from fastmcp.server.middleware import Middleware, MiddlewareContext
 
 from src.poly_storage import PolyStorage
 from src.poly_objects import PolyEvent
-from src.tools import calculate_compound_percentage
+from src.utils import calculate_compound_percentage
+
+
+class BearerAuthMiddleware(Middleware):
+    """Validate Bearer token from Authorization header."""
+
+    async def on_call_tool(self, context: MiddlewareContext, call_next):
+        headers = get_http_headers()
+        auth_header = headers.get("authorization", "")
+
+        expected_token = os.getenv("MCP_BEARER_TOKEN")
+        if not expected_token:
+            raise ToolError("Server misconfigured: MCP_BEARER_TOKEN not set")
+
+        if not auth_header.startswith("Bearer "):
+            raise ToolError("Unauthorized: Missing Bearer token")
+
+        token = auth_header[7:]
+        if token != expected_token:
+            raise ToolError("Unauthorized: Invalid token")
+
+        return await call_next(context)
 
 
 mcp = FastMCP("Polymarket MCP Server")
+mcp.add_middleware(BearerAuthMiddleware())
 
 
 @mcp.tool()

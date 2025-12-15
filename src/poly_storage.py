@@ -16,7 +16,7 @@ from typing import Callable, Dict, List, Optional
 
 from src.poly_api import PolyApiClient
 from src.poly_objects import PolyEvent, PolyMarket, Outcome
-from src.tools import format_currency, ensure_utc, parse_datetime
+from src.utils import format_currency, ensure_utc, parse_datetime
 
 
 # Daemon configuration

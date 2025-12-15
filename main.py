@@ -12,8 +12,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from src.api_routes import router as api_router
-from src.mcp_tools import mcp
+from dotenv import load_dotenv
+# Load environment variables
+load_dotenv()
+
+from src.tools_api import router as api_router
+from src.tools_mcp import mcp
 from src.poly_storage import PolyStorage
 
 # Server configuration from environment
