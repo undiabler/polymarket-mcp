@@ -15,8 +15,10 @@ def format_currency(value: float) -> str:
     elif value >= 1_000:
         return f"${value / 1_000:.2f}K"
     else:
-        return f"${value:.2f}"
+        return f"${value:.0f}"
 
+def format_currency_full(value: float) -> str:
+    return f"${value:_.2f}"
 
 def ensure_utc(dt: datetime) -> datetime:
     """Ensure datetime is timezone-aware (UTC)."""

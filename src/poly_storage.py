@@ -16,7 +16,7 @@ from typing import Callable, Dict, List, Optional
 
 from src.poly_api import PolyApiClient
 from src.poly_objects import PolyEvent, PolyMarket, Outcome
-from src.utils import format_currency, ensure_utc, parse_datetime
+from src.utils import format_currency, ensure_utc, parse_datetime, format_currency_full
 
 
 # Daemon configuration
@@ -195,10 +195,12 @@ class PolyStorage:
         result["description"] = event.description
         result["active"] = event.active and not event.closed and not event.archived
 
-        result["liquidity"] = event.liquidity
+        result["liquidity"] = format_currency_full(event.liquidity)
         result["tags"] = event.tags
         
         markets = event.get_markets()
+        total_markets = sum(1 for m in markets if m.is_active())
+        result["total_markets"] = total_markets
         markets_data = []
         for market in markets:
             if not market.is_active():
@@ -207,10 +209,11 @@ class PolyStorage:
                 "market_id": market.market_id,
                 "question": market.question,
                 "expiry": market.expiry.isoformat() if market.expiry else None,
-                "liquidity": f"${market.total_liquidity:.2f}",
-                "liquidity_percentage": f"{market.total_liquidity / event.liquidity * 100:.2f}%" if event.liquidity > 0 else "0.00%",
+                "liquidity": format_currency_full(market.total_liquidity),
                 "outcomes": [{"name": o.name, "probability": f"{100*o.price:.2f}%",} for o in market.outcomes],
             }
+            if total_markets>1:
+                market_tmp["liquidity_percentage"] = f"{market.total_liquidity / event.liquidity * 100:.2f}%" if event.liquidity > 0 else "0.00%"
             if market.title:
                 market_tmp["title"] = market.title
             if market.description!=event.description:

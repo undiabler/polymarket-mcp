@@ -36,3 +36,16 @@ def global_stats_api() -> dict:
     """
     return PolyStorage.get_instance().get_decorated_statistics()
 
+@router.get("/event/{event_id}")
+def get_event_api(event_id: str) -> dict:
+    """
+    Alternative REST API endpoint for retrieving a specific event by event_id.
+
+    Args:
+        event_id (str): The ID of the event to retrieve.
+
+    Returns:
+        dict: Decorated event data.
+    """
+    return PolyStorage.get_instance().get_decorated_event(event_id)
+
