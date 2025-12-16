@@ -18,3 +18,41 @@ The first few iterations very quickly faced environment limitations because they
 - **Global analytics**: Total liquidity, market counts, distribution metrics
 - **Combined filtering**: Search by liquidity, expiry, tags, profit potential
 - **Remote MCP**: Run on server and connect to existing online clients.
+
+## Installation and Usage
+
+This system was designed to run remotely, making Docker the ideal standard for packaging the project without worrying about dependencies. Docker also enables easy horizontal scaling by running multiple container instances.
+
+### Quick Start (Remote Build)
+
+Build directly from GitHub on your remote server:
+
+```bash
+docker build -t polymarket-mcp https://github.com/undiabler/polymarket-mcp.git
+```
+
+### Local Build
+
+Alternatively, clone the repository and build locally:
+
+```bash
+git clone https://github.com/undiabler/polymarket-mcp.git
+cd polymarket-mcp
+docker build -t polymarket-mcp .
+```
+
+### Running the Server
+
+Once the Docker image is built, run the container:
+
+```bash
+docker run -d -p 8000:8000 --name polymarket-mcp-app \
+  -e MCP_BEARER_TOKEN=<your generated key to secure> \
+  polymarket-mcp
+```
+
+That's it! Your MCP server is now running and accessible at `http://your-server-ip:8000` as an endpoint for MCP clients.
+
+### Environment Variables
+No additional Polymarket API keys are required to make public data requests.
+- `MCP_BEARER_TOKEN` - Bearer token for securing your MCP and API endpoints (required, can be any string)
