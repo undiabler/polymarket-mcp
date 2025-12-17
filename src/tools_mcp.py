@@ -13,7 +13,7 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 
-from src.poly_storage import PolyStorage
+from src.poly_storage import PolyStorage, MARKET_FILTERS, MARKET_SORTS
 from src.poly_objects import PolyEvent
 from src.utils import calculate_compound_percentage
 
@@ -38,10 +38,8 @@ class BearerAuthMiddleware(Middleware):
 
         return await call_next(context)
 
-
 mcp = FastMCP("Polymarket MCP Server")
 mcp.add_middleware(BearerAuthMiddleware())
-
 
 @mcp.tool()
 def global_stats() -> dict:
@@ -70,55 +68,63 @@ def compound_percentage(growth_percentage: float, cycles: int) -> str:
     result = calculate_compound_percentage(growth_percentage, cycles)
     return f"{result * 100:.3f}%"
 
-
 @mcp.tool()
-def search_events(
-    min_liquidity: float = 0,
-    max_hours_until_expiry: Optional[int] = None,
-    tags: Optional[list[str]] = None,
-    search_query: Optional[str] = None,
-    active_only: bool = True,
+def query_events(
+    filtername: str = "default",
+    sortingname: str = "profit",
     limit: int = 50,
 ) -> list[dict]:
     """
-    Search events with filters.
+    Query events containing markets matching named filter criteria.
+    Use this tool for any type of top level market requests (e.g. "give me the top 10 markets by profit", "give me the top 50 markets by liquidity", "give me the top 5 markets by expiry", etc.).
+    This implements "events first" approach: filters markets by predefined criteria,
+    then extracts their parent events (deduplicated). Each event contains only
+    its qualifying markets, sorted by the chosen strategy. For full list of markets, use get_event tool.
+
+    Available filters: {filters}
+    Available sorts: {sorts}
 
     Args:
-        min_liquidity: Minimum event liquidity in USDC
-        max_hours_until_expiry: Only events expiring within this many hours
-        tags: Filter by tags (any match)
-        search_query: Search in title/slug (case-insensitive)
-        active_only: Only return active events
-        limit: Maximum number of results
+        filtername: Filter preset name (default: "default")
+        sortingname: Sort strategy name (default: "profit")
+        limit: Maximum qualifying markets to consider
 
     Returns:
-        List of matching events as dicts
-    """
+        List of events with their qualifying markets
+        Liquidity values are in USD, formatted with comma separators (e.g., '$24,156 is 24 thousand dollars and 156 dollars')
+    """.format(
+        filters=", ".join(MARKET_FILTERS.keys()),
+        sorts=", ".join(MARKET_SORTS.keys()),
+    )
     storage = PolyStorage.get_instance()
 
-    def filter_fn(e: PolyEvent) -> bool:
-        if active_only and not e.is_active():
-            return False
-        if e.liquidity < min_liquidity:
-            return False
-        if tags and not any(t.lower() in [et.lower() for et in e.tags] for t in tags):
-            return False
-        if search_query:
-            query_lower = search_query.lower()
-            if query_lower not in (e.title or "").lower() and query_lower not in e.slug.lower():
-                return False
-        if max_hours_until_expiry is not None and e.end_date:
-            if e.hours_remaining() > max_hours_until_expiry:
-                return False
-        return True
+    # Get qualifying markets
+    try:
+        markets = storage.query_markets_for_events(filtername, sortingname, limit)
+    except ValueError as e:
+        return [{"error": str(e)}]
 
-    events = storage.filter_events(filter_fn)
+    # Group markets by event_id (preserving order)
+    events_list = [] # preserver order of events
+    events_map: dict[str, list] = {} # group markets by event_id
+    for market in markets:
+        if market.event_id not in events_list:
+            events_list.append(market.event_id)
+        if market.event_id not in events_map:
+            events_map[market.event_id] = []
+        events_map[market.event_id].append(market.market_id)
 
-    # Sort by liquidity descending
-    events.sort(key=lambda e: e.liquidity, reverse=True)
+    # Build result with events containing their qualifying markets
+    result = []
+    for event_id in events_list:
+        event = storage.get_event(event_id)
+        if not event:
+            continue
 
-    return [e.model_dump(mode="json") for e in events[:limit]]
+        event_data = storage.get_decorated_event(event_id, specific_markets=events_map[event_id])
+        result.append(event_data)
 
+    return result
 
 @mcp.tool()
 def get_event(event_id: str) -> dict:

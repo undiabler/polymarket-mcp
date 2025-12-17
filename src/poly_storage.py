@@ -16,7 +16,7 @@ from typing import Callable, Dict, List, Optional
 
 from src.poly_api import PolyApiClient
 from src.poly_objects import PolyEvent, PolyMarket, Outcome
-from src.utils import format_currency, ensure_utc, parse_datetime, format_currency_full
+from src.utils import format_currency, ensure_utc, parse_datetime
 
 
 # Daemon configuration
@@ -25,6 +25,25 @@ DAEMON_CONFIG = {
     "stale_threshold": 3600,  # Refresh if older than 1 hour
     "expired_threshold": 604800,  # Remove if expired > 7 days
     "rate_limit_delay": 0.1,  # Delay between API requests
+}
+
+# Market filter registry - named filter configurations
+MARKET_FILTERS = {
+    "default": {
+        "ignored_series": ["nothing-ever-happens", "elon-tweets"],
+        "ignored_tags": ["Crypto Prices", "Stock Prices", "Up or Down", "Sports"],
+        "min_liquidity": 2_000,
+        "max_hours": 7 * 24,
+        "min_dominant_price": 0.85,
+        "min_profit": 0.0239,
+    }
+}
+
+# Market sorting registry - named sort key functions
+MARKET_SORTS = {
+    "profit": lambda m: m.profit_percentages()[1],  # profit per hour (descending)
+    "liquidity": lambda m: m.total_liquidity,  # liquidity (descending)
+    "expiry": lambda m: -m.hours_remaining(),  # soonest first
 }
 
 
@@ -180,7 +199,70 @@ class PolyStorage:
         markets = self.get_all_markets()
         return [m for m in markets if filter_fn(m)]
 
-    def get_decorated_event(self, event_id: str) -> dict:
+    def query_markets_for_events(
+        self,
+        filtername: str = "default",
+        sortingname: str = "profit",
+        limit: int = 50,
+    ) -> List[PolyMarket]:
+        """
+        Filter and sort markets using named strategies.
+
+        Args:
+            filtername: Name of filter configuration from MARKET_FILTERS
+            sortingname: Name of sort strategy from MARKET_SORTS
+            limit: Maximum number of markets to return
+
+        Returns:
+            List of qualifying markets, sorted by the named strategy
+        """
+        # Get filter config
+        filter_config = MARKET_FILTERS.get(filtername)
+        if not filter_config:
+            raise ValueError(f"Unknown filter: {filtername}")
+
+        # Get sort function
+        sort_fn = MARKET_SORTS.get(sortingname)
+        if not sort_fn:
+            raise ValueError(f"Unknown sort: {sortingname}")
+
+        # Extract filter parameters
+        ignored_series = filter_config.get("ignored_series", [])
+        ignored_tags = filter_config.get("ignored_tags", [])
+        min_liquidity = filter_config.get("min_liquidity", 0)
+        max_hours = filter_config.get("max_hours", float("inf"))
+        min_dominant_price = filter_config.get("min_dominant_price", 0)
+        min_profit = filter_config.get("min_profit", 0)
+
+        def filter_fn(m: PolyMarket) -> bool:
+            if not m.is_active():
+                return False
+            if m.hours_remaining() > max_hours:
+                return False
+            if m.total_liquidity < min_liquidity:
+                return False
+            dominant = m.dominant_outcome
+            if dominant is None:
+                return False
+            if dominant.price < min_dominant_price:
+                return False
+            if m.profit_percentages()[0] < min_profit:
+                return False
+            if any(tag in m.tags for tag in ignored_tags):
+                return False
+            if m.series_slug in ignored_series:
+                return False
+            return True
+
+        # Filter markets
+        markets = self.filter_markets(filter_fn)
+
+        # Sort by named strategy (descending)
+        markets.sort(key=sort_fn, reverse=True)
+
+        return markets[:limit]
+
+    def get_decorated_event(self, event_id: str, specific_markets: list[str] = []) -> dict:
         result = {
             "event_id": event_id,
             "title": "N/A",
@@ -193,23 +275,27 @@ class PolyStorage:
 
         result["title"] = event.title
         result["description"] = event.description
+        result["url"] = event.get_url()
         result["active"] = event.active and not event.closed and not event.archived
 
-        result["liquidity"] = format_currency_full(event.liquidity)
+        result["liquidity"] = format_currency(event.liquidity)
         result["tags"] = event.tags
         
         markets = event.get_markets()
         total_markets = sum(1 for m in markets if m.is_active())
         result["total_markets"] = total_markets
         markets_data = []
+        only_specific_markets = len(specific_markets) > 0
         for market in markets:
             if not market.is_active():
+                continue
+            if only_specific_markets and market.market_id not in specific_markets:
                 continue
             market_tmp={
                 "market_id": market.market_id,
                 "question": market.question,
                 "expiry": market.expiry.isoformat() if market.expiry else None,
-                "liquidity": format_currency_full(market.total_liquidity),
+                "liquidity": format_currency(market.total_liquidity),
                 "outcomes": [{"name": o.name, "probability": f"{100*o.price:.2f}%",} for o in market.outcomes],
             }
             if total_markets>1:
@@ -237,7 +323,7 @@ class PolyStorage:
 
         # Calculate liquidity distribution
         bucket_bounds = [100_000, 50_000, 10_000, 5_000]
-        bucket_labels = ["$100K+", "$50K-$100K", "$10K-$50K", "$5K-$10K", "<$5K"]
+        bucket_labels = ["$100,000+", "$50,000-$100,000", "$10,000-$50,000", "$5,000-$10,000", "<$5,000"]
         liquidity_distribution = {label: {"count": 0, "liquidity": 0.0} for label in bucket_labels}
 
         for market in active_markets:
@@ -257,8 +343,8 @@ class PolyStorage:
             liquidity_distribution[label]["liquidity"] += liquidity
 
         for label, ld in liquidity_distribution.items():
-            liquidity_distribution[label]["liquidity_percentage"] = f"{ld['liquidity'] / total_liquidity * 100:.3f}%" if total_liquidity > 0 else "0.000%"
-            liquidity_distribution[label]["count_percentage"] = f"{ld['count'] / num_active_markets * 100:.3f}%" if num_active_markets > 0 else "0.000%"
+            liquidity_distribution[label]["liquidity_percentage"] = f"{ld['liquidity'] / total_liquidity * 100:.2f}%" if total_liquidity > 0 else "0.00%"
+            liquidity_distribution[label]["count_percentage"] = f"{ld['count'] / num_active_markets * 100:.2f}%" if num_active_markets > 0 else "0.00%"
             liquidity_distribution[label]["liquidity"] = format_currency(ld['liquidity'])
 
         # Calculate strategy totals (hunted/hunters)
@@ -277,13 +363,13 @@ class PolyStorage:
         liquidity_balance = {
             "hunted_liquidity": format_currency(hunted),
             "hunters_liquidity": format_currency(hunters),
-            "hunted_percentage": f"{hunted / (hunted + hunters) * 100:.3f}%" if hunted + hunters > 0 else "0.000%",
+            "hunted_percentage": f"{hunted / (hunted + hunters) * 100:.2f}%" if hunted + hunters > 0 else "0.00%",
         }
 
         return {
             "active_events": num_active_events,
             "active_markets": num_active_markets,
-            "avg_markets_per_event": f"{avg_markets_per_event:.3f}" if avg_markets_per_event > 0 else "0.000",
+            "avg_markets_per_event": f"{avg_markets_per_event:.2f}" if avg_markets_per_event > 0 else "0.00",
             "liquidity_total": format_currency(total_liquidity),
             "liquidity_buckets": liquidity_distribution,
             "liquidity_balance": liquidity_balance,

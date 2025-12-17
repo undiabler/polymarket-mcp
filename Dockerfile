@@ -10,19 +10,19 @@ WORKDIR /app
 # Copy dependency files first for layer caching
 COPY pyproject.toml README.md ./
 
-# Install dependencies (frozen from lock file)
-# RUN uv sync --frozen --no-dev --no-install-project
+# Install dependencies
+RUN uv sync --no-dev --no-install-project
 
 # Copy application code
 COPY main.py ./
 COPY src/ ./src/
+RUN mkdir -p data
 
 # Install the project itself
-RUN uv sync --no-dev
+# RUN uv sync --no-dev
 
 # Create non-root user for security
-RUN useradd --create-home --shell /bin/bash appuser && \
-    chown -R appuser:appuser /app
+RUN useradd --no-log-init --shell /bin/rbash --create-home appuser && chown -R appuser:appuser /app
 USER appuser
 
 # Default port

@@ -48,10 +48,12 @@ Once the Docker image is built, run the container:
 ```bash
 docker run -d -p 8000:8000 --name polymarket-mcp-app \
   -e MCP_BEARER_TOKEN=<your generated key to secure> \
+  --volume polycache:/app/data \
   polymarket-mcp
 ```
 
 That's it! Your MCP server is now running and accessible at `http://your-server-ip:8000` as an endpoint for MCP clients.
+You can also skip --volume flag, but your application will start slow since it will load all events on statrup. Mounted volume preserve cache between restarts.
 
 ### Environment Variables
 No additional Polymarket API keys are required to make public data requests.
