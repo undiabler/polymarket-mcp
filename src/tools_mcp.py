@@ -6,7 +6,7 @@ All business logic lives in PolyStorage.
 """
 
 import os
-from typing import Optional
+from typing import Annotated, Optional
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
@@ -70,9 +70,9 @@ def compound_percentage(growth_percentage: float, cycles: int) -> str:
 
 @mcp.tool()
 def query_events(
-    filtername: str = "default",
-    sortingname: str = "profit",
-    limit: int = 50,
+    filtername: Annotated[str, "Filter preset name. Available: default"] = "default",
+    sortingname: Annotated[str, "Sort strategy. Available: profit, liquidity, expiry"] = "profit",
+    limit: Annotated[int, "Maximum qualifying markets to consider"] = 50,
 ) -> list[dict]:
     """
     Query events containing markets matching named filter criteria.
@@ -81,21 +81,13 @@ def query_events(
     then extracts their parent events (deduplicated). Each event contains only
     its qualifying markets, sorted by the chosen strategy. For full list of markets, use get_event tool.
 
-    Available filters: {filters}
-    Available sorts: {sorts}
-
-    Args:
-        filtername: Filter preset name (default: "default")
-        sortingname: Sort strategy name (default: "profit")
-        limit: Maximum qualifying markets to consider
+    Available filters: default
+    Available sorts: profit, liquidity, expiry
 
     Returns:
         List of events with their qualifying markets
         Liquidity values are in USD, formatted with comma separators (e.g., '$24,156 is 24 thousand dollars and 156 dollars')
-    """.format(
-        filters=", ".join(MARKET_FILTERS.keys()),
-        sorts=", ".join(MARKET_SORTS.keys()),
-    )
+    """
     storage = PolyStorage.get_instance()
 
     # Get qualifying markets
