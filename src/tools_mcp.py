@@ -8,6 +8,7 @@ All business logic lives in PolyStorage.
 import os
 from typing import Annotated, Optional
 
+import mcp.types as mcp_types
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_http_headers
@@ -16,6 +17,40 @@ from fastmcp.server.middleware import Middleware, MiddlewareContext
 from src.poly_storage import PolyStorage, MARKET_FILTERS, MARKET_SORTS
 from src.poly_objects import PolyEvent
 from src.utils import calculate_compound_percentage
+
+# Create MCP server instance first (needed for middleware access)
+mcp = FastMCP("Polymarket MCP Server")
+
+
+class ArgumentSanitizerMiddleware(Middleware):
+    """
+    Strip extra/unknown fields from tool arguments before Pydantic validation.
+
+    Some MCP clients (e.g., n8n) include metadata fields like 'tool', 'id', 'toolCallId'
+    inside the arguments dict. FastMCP's strict Pydantic validation rejects these
+    unexpected fields. This middleware filters arguments to only include parameters
+    defined in the tool's JSON schema.
+    """
+
+    async def on_call_tool(self, context: MiddlewareContext, call_next):
+        message = context.message
+        arguments = message.arguments or {}
+
+        # Get the tool to access its parameter schema
+        tools = await mcp._tool_manager.get_tools()
+        tool = tools.get(message.name)
+
+        if tool and arguments:
+            # Get valid parameter names from the tool's JSON schema
+            valid_params = set(tool.parameters.get("properties", {}).keys())
+            # Filter to only include valid parameters, silently dropping extras
+            cleaned_args = {k: v for k, v in arguments.items() if k in valid_params}
+
+            # Create new message with cleaned arguments
+            new_message = mcp_types.CallToolRequestParams(name=message.name, arguments=cleaned_args)
+            context = context.copy(message=new_message)
+
+        return await call_next(context)
 
 
 class BearerAuthMiddleware(Middleware):
@@ -38,7 +73,9 @@ class BearerAuthMiddleware(Middleware):
 
         return await call_next(context)
 
-mcp = FastMCP("Polymarket MCP Server")
+
+# Register middlewares in order: sanitize args first, then authenticate
+mcp.add_middleware(ArgumentSanitizerMiddleware())
 mcp.add_middleware(BearerAuthMiddleware())
 
 @mcp.tool()

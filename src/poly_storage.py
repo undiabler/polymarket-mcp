@@ -16,7 +16,7 @@ from typing import Callable, Dict, List, Optional
 
 from src.poly_api import PolyApiClient
 from src.poly_objects import PolyEvent, PolyMarket, Outcome
-from src.utils import format_currency, ensure_utc, parse_datetime
+from src.utils import format_currency, format_currency_words, ensure_utc, parse_datetime
 
 
 # Daemon configuration
@@ -278,7 +278,8 @@ class PolyStorage:
         result["url"] = event.get_url()
         result["active"] = event.active and not event.closed and not event.archived
 
-        result["liquidity"] = format_currency(event.liquidity)
+        result["liquidity_event"] = format_currency(event.liquidity)
+        result["liquidity_event_words"] = format_currency_words(event.liquidity)
         result["tags"] = event.tags
         
         markets = event.get_markets()
@@ -295,7 +296,8 @@ class PolyStorage:
                 "market_id": market.market_id,
                 "question": market.question,
                 "expiry": market.expiry.isoformat() if market.expiry else None,
-                "liquidity": format_currency(market.total_liquidity),
+                "liquidity_market": format_currency(market.total_liquidity),
+                "liquidity_market_words": format_currency_words(market.total_liquidity),
                 "outcomes": [{"name": o.name, "probability": f"{100*o.price:.2f}%",} for o in market.outcomes],
             }
             if total_markets>1:
@@ -324,7 +326,7 @@ class PolyStorage:
         # Calculate liquidity distribution
         bucket_bounds = [100_000, 50_000, 10_000, 5_000]
         bucket_labels = ["$100,000+", "$50,000-$100,000", "$10,000-$50,000", "$5,000-$10,000", "<$5,000"]
-        liquidity_distribution = {label: {"count": 0, "liquidity": 0.0} for label in bucket_labels}
+        liquidity_distribution = {label: {"count": 0, "liquidity_bucket": 0.0} for label in bucket_labels}
 
         for market in active_markets:
             liquidity = market.total_liquidity
@@ -340,12 +342,13 @@ class PolyStorage:
                 label = bucket_labels[4]
 
             liquidity_distribution[label]["count"] += 1
-            liquidity_distribution[label]["liquidity"] += liquidity
+            liquidity_distribution[label]["liquidity_bucket"] += liquidity
 
         for label, ld in liquidity_distribution.items():
-            liquidity_distribution[label]["liquidity_percentage"] = f"{ld['liquidity'] / total_liquidity * 100:.2f}%" if total_liquidity > 0 else "0.00%"
+            liquidity_distribution[label]["liquidity_percentage"] = f"{ld['liquidity_bucket'] / total_liquidity * 100:.2f}%" if total_liquidity > 0 else "0.00%"
             liquidity_distribution[label]["count_percentage"] = f"{ld['count'] / num_active_markets * 100:.2f}%" if num_active_markets > 0 else "0.00%"
-            liquidity_distribution[label]["liquidity"] = format_currency(ld['liquidity'])
+            liquidity_distribution[label]["liquidity_bucket"] = format_currency(ld['liquidity_bucket'])
+            liquidity_distribution[label]["liquidity_bucket_words"] = format_currency_words(ld['liquidity_bucket'])
 
         # Calculate strategy totals (hunted/hunters)
         hunted = 0.0
@@ -362,7 +365,9 @@ class PolyStorage:
 
         liquidity_balance = {
             "hunted_liquidity": format_currency(hunted),
+            "hunted_liquidity_words": format_currency_words(hunted),
             "hunters_liquidity": format_currency(hunters),
+            "hunters_liquidity_words": format_currency_words(hunters),
             "hunted_percentage": f"{hunted / (hunted + hunters) * 100:.2f}%" if hunted + hunters > 0 else "0.00%",
         }
 
@@ -371,6 +376,7 @@ class PolyStorage:
             "active_markets": num_active_markets,
             "avg_markets_per_event": f"{avg_markets_per_event:.2f}" if avg_markets_per_event > 0 else "0.00",
             "liquidity_total": format_currency(total_liquidity),
+            "liquidity_total_words": format_currency_words(total_liquidity),
             "liquidity_buckets": liquidity_distribution,
             "liquidity_balance": liquidity_balance,
             "last_sync": self._last_sync.isoformat() if self._last_sync else None,

@@ -17,7 +17,9 @@ The first few iterations very quickly faced environment limitations because they
 - **Events first**: Events are the primary entity (stop overbetting on the same event)
 - **Global analytics**: Total liquidity, market counts, distribution metrics
 - **Combined filtering**: Search by liquidity, expiry, tags, profit potential
-- **Remote MCP**: Run on server and connect to existing online clients.
+- **Remote MCP**: Run on server and connect to existing online clients
+- **Universal sanitizer**: Handles extra metadata fields (tool, id, toolCallId) that some MCP clients inject into tool arguments
+- **Data redundancy**: Duplication of important data formats to reduce hallucinations and missinterpretations (Qwen, Mistral, Kimi K2, MiniMax) 
 
 ## Installation and Usage
 

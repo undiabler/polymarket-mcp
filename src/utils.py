@@ -7,6 +7,8 @@ Standalone helpers for formatting, datetime handling, and calculations.
 from datetime import datetime, timezone
 from typing import Optional
 
+from num2words import num2words
+
 
 def format_currency(value: float) -> str:
     """Format value as currency."""
@@ -17,6 +19,13 @@ def format_currency(value: float) -> str:
     # else:
     #     return f"${value:.0f}"
     return f"${value:,.0f}" # delimiter is comma like for llm to understand the value
+
+
+def format_currency_words(value: float) -> str:
+    """Format value as currency in words for LLM clarity."""
+    rounded = round(value)
+    return f"{num2words(rounded)} dollars"
+
 
 def ensure_utc(dt: datetime) -> datetime:
     """Ensure datetime is timezone-aware (UTC)."""
