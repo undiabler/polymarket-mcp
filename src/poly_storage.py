@@ -312,7 +312,7 @@ class PolyStorage:
         result["last_sync"] = self._last_sync.isoformat() if self._last_sync else None
         return result
 
-    def get_decorated_statistics(self) -> dict:
+    def get_decorated_statistics(self, withBuckedAnalytics: bool = False, withHuntedAnalytics: bool = False) -> dict:
         """Get current cache statistics including liquidity distribution and strategy totals."""
         markets = self.get_all_markets()
         active_events = [e for e in self._events.values() if e.is_active()]
@@ -323,64 +323,70 @@ class PolyStorage:
         avg_markets_per_event = num_active_markets / num_active_events if num_active_events > 0 else 0
         total_liquidity = sum(m.total_liquidity for m in active_markets)
 
-        # Calculate liquidity distribution
-        bucket_bounds = [100_000, 50_000, 10_000, 5_000]
-        bucket_labels = ["$100,000+", "$50,000-$100,000", "$10,000-$50,000", "$5,000-$10,000", "<$5,000"]
-        liquidity_distribution = {label: {"count": 0, "liquidity_bucket": 0.0} for label in bucket_labels}
-
-        for market in active_markets:
-            liquidity = market.total_liquidity
-            if liquidity >= bucket_bounds[0]:
-                label = bucket_labels[0]
-            elif liquidity >= bucket_bounds[1]:
-                label = bucket_labels[1]
-            elif liquidity >= bucket_bounds[2]:
-                label = bucket_labels[2]
-            elif liquidity >= bucket_bounds[3]:
-                label = bucket_labels[3]
-            else:
-                label = bucket_labels[4]
-
-            liquidity_distribution[label]["count"] += 1
-            liquidity_distribution[label]["liquidity_bucket"] += liquidity
-
-        for label, ld in liquidity_distribution.items():
-            liquidity_distribution[label]["liquidity_percentage"] = f"{ld['liquidity_bucket'] / total_liquidity * 100:.2f}%" if total_liquidity > 0 else "0.00%"
-            liquidity_distribution[label]["count_percentage"] = f"{ld['count'] / num_active_markets * 100:.2f}%" if num_active_markets > 0 else "0.00%"
-            liquidity_distribution[label]["liquidity_bucket"] = format_currency(ld['liquidity_bucket'])
-            liquidity_distribution[label]["liquidity_bucket_words"] = format_currency_words(ld['liquidity_bucket'])
-
-        # Calculate strategy totals (hunted/hunters)
-        hunted = 0.0
-        hunters = 0.0
-
-        for market in active_markets:
-            dominant = market.dominant_outcome
-            if market.total_liquidity <= 0 or not dominant:
-                continue
-
-            if dominant.price >= 0.90:
-                hunted += market.total_liquidity * (1 - dominant.price)
-                hunters += market.total_liquidity * dominant.price
-
-        liquidity_balance = {
-            "hunted_liquidity": format_currency(hunted),
-            "hunted_liquidity_words": format_currency_words(hunted),
-            "hunters_liquidity": format_currency(hunters),
-            "hunters_liquidity_words": format_currency_words(hunters),
-            "hunted_percentage": f"{hunted / (hunted + hunters) * 100:.2f}%" if hunted + hunters > 0 else "0.00%",
-        }
-
-        return {
+        result = {
             "active_events": num_active_events,
             "active_markets": num_active_markets,
             "avg_markets_per_event": f"{avg_markets_per_event:.2f}" if avg_markets_per_event > 0 else "0.00",
             "liquidity_total": format_currency(total_liquidity),
             "liquidity_total_words": format_currency_words(total_liquidity),
-            "liquidity_buckets": liquidity_distribution,
-            "liquidity_balance": liquidity_balance,
             "last_sync": self._last_sync.isoformat() if self._last_sync else None,
         }
+
+        if withBuckedAnalytics:
+            # Calculate liquidity distribution
+            bucket_bounds = [100_000, 50_000, 10_000, 5_000]
+            bucket_labels = ["$100,000+", "$50,000-$100,000", "$10,000-$50,000", "$5,000-$10,000", "<$5,000"]
+            liquidity_distribution = {label: {"count": 0, "liquidity_bucket": 0.0} for label in bucket_labels}
+
+            for market in active_markets:
+                liquidity = market.total_liquidity
+                if liquidity >= bucket_bounds[0]:
+                    label = bucket_labels[0]
+                elif liquidity >= bucket_bounds[1]:
+                    label = bucket_labels[1]
+                elif liquidity >= bucket_bounds[2]:
+                    label = bucket_labels[2]
+                elif liquidity >= bucket_bounds[3]:
+                    label = bucket_labels[3]
+                else:
+                    label = bucket_labels[4]
+
+                liquidity_distribution[label]["count"] += 1
+                liquidity_distribution[label]["liquidity_bucket"] += liquidity
+
+            for label, ld in liquidity_distribution.items():
+                liquidity_distribution[label]["liquidity_percentage"] = f"{ld['liquidity_bucket'] / total_liquidity * 100:.2f}%" if total_liquidity > 0 else "0.00%"
+                liquidity_distribution[label]["count_percentage"] = f"{ld['count'] / num_active_markets * 100:.2f}%" if num_active_markets > 0 else "0.00%"
+                liquidity_distribution[label]["liquidity_bucket_words"] = format_currency_words(ld['liquidity_bucket'])
+
+                liquidity_distribution[label]["liquidity_bucket"] = format_currency(ld['liquidity_bucket'])
+            
+            result["liquidity_buckets"] = liquidity_distribution
+
+        if withHuntedAnalytics:
+            # Calculate totals metrics (hunted/hunters)
+            hunted = 0.0
+            hunters = 0.0
+
+            for market in active_markets:
+                dominant = market.dominant_outcome
+                if market.total_liquidity <= 0 or not dominant:
+                    continue
+
+                if dominant.price >= 0.90:
+                    hunted += market.total_liquidity * (1 - dominant.price)
+                    hunters += market.total_liquidity * dominant.price
+
+            liquidity_balance = {
+                "hunted_liquidity": format_currency(hunted),
+                "hunted_liquidity_words": format_currency_words(hunted),
+                "hunters_liquidity": format_currency(hunters),
+                "hunters_liquidity_words": format_currency_words(hunters),
+                "hunted_percentage": f"{hunted / (hunted + hunters) * 100:.2f}%" if hunted + hunters > 0 else "0.00%",
+            }
+            result["liquidity_balance"] = liquidity_balance
+
+        return result
 
     # === Daemon Methods ===
 

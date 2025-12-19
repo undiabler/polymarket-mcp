@@ -79,15 +79,17 @@ mcp.add_middleware(ArgumentSanitizerMiddleware())
 mcp.add_middleware(BearerAuthMiddleware())
 
 @mcp.tool()
-def global_stats() -> dict:
+def global_stats(
+    with_bucket_analytics: Annotated[bool, "Include liquidity distribution across size tiers ($5K to $100K+)."] = False,
+    with_hunted_analytics: Annotated[bool, "Include profit extraction metrics for high-confidence markets (>90% dominant outcome). Shows 'hunted' liquidity (minority bets likely to lose) vs 'hunters' (majority bets likely to win)."] = False,
+) -> dict:
     """
-    Get current global statistics from Polymarket.
-
-    Returns total active events, markets betting on these events, liquidity distribution (seperated by buckets), and liquidity balance (hunted/hunters).
-    Calculation of liquidity balance is based on the assumption that the dominant outcome (>90%) is hunters and the rest is hunted (will be absorbed by hunters).
-    Hunted percentage than is a realistic average profit percentage left to be extracted from the market.
+    Get Polymarket platform overview: active events/markets count, total liquidity (USD), and last sync time.
     """
-    return PolyStorage.get_instance().get_decorated_statistics()
+    return PolyStorage.get_instance().get_decorated_statistics(
+        withBuckedAnalytics=with_bucket_analytics,
+        withHuntedAnalytics=with_hunted_analytics,
+    )
 
 @mcp.tool()
 def compound_percentage(growth_percentage: float, cycles: int) -> str:
